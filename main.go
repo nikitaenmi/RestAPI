@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"math/rand"
 	"net/http"
+	"strconv"
 
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
@@ -15,10 +17,11 @@ import (
 type Note struct {
 	ID      string `json:"id"`
 	Content string `json:"content"`
-	UserID  int
+	UserID  int    `json: userid`
 }
 
 var Notes []Note
+var Context string
 
 func getNotes(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -43,6 +46,28 @@ func deleteAllNotes(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(Notes)
 }
 
+func createNote(w http.ResponseWriter, r *http.Request) {
+	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
+	db, err := sql.Open("postgres", psqlconn)
+	CheckError(err)
+	defer db.Close()
+	err = db.Ping()
+	w.Header().Set("Content-Type", "application/json")
+	var note Note
+	_ = json.NewDecoder(r.Body).Decode(&note)
+	note.ID = strconv.Itoa(rand.Intn(1000000))
+	Notes = append(Notes, note)
+	json.NewEncoder(w).Encode(note)
+	fmt.Println(note.Content)
+	_, err = db.Exec(fmt.Sprintf("INSERT INTO notes (userid, content) VALUES (1, '%s')", note.Content))
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Printf("Запись успешно добавлена!\n")
+
+	}
+}
+
 const (
 	host     = "localhost"
 	port     = 5432
@@ -63,8 +88,11 @@ func main() {
 	r := mux.NewRouter()
 	log.Println("Listening at port 8080")
 	r.HandleFunc("/notes", getNotes).Methods("GET")
-	r.HandleFunc("/", deleteAllNotes).Methods("DELETE")
+	r.HandleFunc("/notes", deleteAllNotes).Methods("DELETE")
+	r.HandleFunc("/notes", createNote).Methods("POST")
+
 	r.HandleFunc("/", home)
+
 	log.Fatal(http.ListenAndServe(":8080", r))
 
 }
