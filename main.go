@@ -134,5 +134,4 @@ func main() {
 	r.HandleFunc("/notes", createNote).Methods("POST")
 	r.HandleFunc("/login", handleRequest).Methods("POST")
 	log.Fatal(http.ListenAndServe(":8082", r))
-
 }
