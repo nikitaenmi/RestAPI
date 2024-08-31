@@ -16,14 +16,28 @@ const (
 	dbname   = "database"
 )
 
-func CheckUser(username string) bool {
-	type Note struct {
-		ID       int64
-		UserId   string
-		Password string
-		Username string
-		Content  string
+type Note struct {
+	ID       int64
+	Username string
+	Content  string
+}
+
+func ConnectDB() (*sql.DB, error) {
+	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
+	db, err := sql.Open("postgres", psqlconn)
+	if err != nil {
+		panic(err)
 	}
+
+	err = db.Ping()
+	if err != nil {
+		panic(err)
+	}
+	return db, err
+}
+
+func CheckUser(username string) bool {
+
 	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
 	db, err := sql.Open("postgres", psqlconn)
 	if err != nil {
@@ -32,7 +46,6 @@ func CheckUser(username string) bool {
 	defer db.Close()
 	err = db.Ping()
 
-	//var note Note
 	notes := []Note{}
 
 	rows, err := db.Query(fmt.Sprintf("SELECT id FROM users WHERE users = '%s'", username))

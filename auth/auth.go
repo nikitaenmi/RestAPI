@@ -64,8 +64,6 @@ func CheckToken(w http.ResponseWriter, r *http.Request) (string, int) {
 		http.Error(w, "Invalid token", http.StatusUnauthorized)
 		return " ", 0
 	}
-	fmt.Println(claims.Username)
-	fmt.Println(claims.Username)
 
 	return claims.Username, 0
 }
