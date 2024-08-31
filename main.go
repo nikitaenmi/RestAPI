@@ -4,69 +4,27 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"log"
-	"math/rand"
 	"net/http"
-	"strconv"
+	"time"
+	DAL "tmp/DAL"
+	auth "tmp/auth"
+	spel "tmp/speller"
 
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
 )
 
 type Note struct {
-	ID      string `json:"id"`
 	Content string `json:"content"`
-	UserID  int    `json: userid`
+}
+
+type User struct {
+	ID   string
+	Name string
 }
 
 var Notes []Note
-var Context string
-
-func getNotes(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Notes)
-}
-
-func deleteAllNotes(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
-	db, err := sql.Open("postgres", psqlconn)
-	CheckError(err)
-	defer db.Close()
-	err = db.Ping()
-	CheckError(err)
-
-	_, err = db.Exec("DELETE FROM notes;")
-	if err != nil {
-		log.Println(err)
-	} else {
-		fmt.Println("Все записи удалены.")
-	}
-	json.NewEncoder(w).Encode(Notes)
-}
-
-func createNote(w http.ResponseWriter, r *http.Request) {
-	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
-	db, err := sql.Open("postgres", psqlconn)
-	CheckError(err)
-	defer db.Close()
-	err = db.Ping()
-	w.Header().Set("Content-Type", "application/json")
-	var note Note
-	_ = json.NewDecoder(r.Body).Decode(&note)
-	note.ID = strconv.Itoa(rand.Intn(1000000))
-	Notes = append(Notes, note)
-	json.NewEncoder(w).Encode(note)
-	fmt.Println(note.Content)
-	_, err = db.Exec(fmt.Sprintf("INSERT INTO notes (userid, content) VALUES (1, '%s')", note.Content))
-	if err != nil {
-		fmt.Println(err)
-	} else {
-		fmt.Printf("Запись успешно добавлена!\n")
-
-	}
-}
 
 const (
 	host     = "localhost"
@@ -76,60 +34,34 @@ const (
 	dbname   = "database"
 )
 
-func main() {
-
+func ConnectDB() (*sql.DB, error) {
 	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
 	db, err := sql.Open("postgres", psqlconn)
-	CheckError(err)
-	defer db.Close()
-	err = db.Ping()
-	CheckError(err)
-
-	r := mux.NewRouter()
-	log.Println("Listening at port 8080")
-	r.HandleFunc("/notes", getNotes).Methods("GET")
-	r.HandleFunc("/notes", deleteAllNotes).Methods("DELETE")
-	r.HandleFunc("/notes", createNote).Methods("POST")
-
-	r.HandleFunc("/", home)
-
-	log.Fatal(http.ListenAndServe(":8080", r))
-
-}
-
-func CheckError(err error) {
 	if err != nil {
 		panic(err)
 	}
+
+	err = db.Ping()
+	if err != nil {
+		panic(err)
+	}
+	return db, err
 }
 
-func home(w http.ResponseWriter, r *http.Request) {
-	t, _ := template.ParseFiles("./public/html/startStaticPage.html")
-	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
-	db, err := sql.Open("postgres", psqlconn)
-	CheckError(err)
+func getNotes(w http.ResponseWriter, r *http.Request) {
+	username, _ := auth.CheckToken(w, r)
+
+	w.Header().Set("Content-Type", "application/json")
+
+	db, _ := ConnectDB()
 	defer db.Close()
-	err = db.Ping()
 
-	if r.Method != http.MethodPost {
-		t.Execute(w, nil) // отображает страницу
-		return
-	}
+	notes := []Note{}
 
-	r.ParseForm()
-	text := r.PostFormValue("text") // здесь запрос
-	CheckError(err)
-	fmt.Println("Connected!")
-	fmt.Println(text)
-
-	_, err = db.Exec(fmt.Sprintf("INSERT INTO notes (userid, content) VALUES (1, '%s')", text))
+	rows, err := db.Query(fmt.Sprintf("SELECT content FROM notes WHERE username = '%s'", username))
 	if err != nil {
-		fmt.Println(err)
-	} else {
-		fmt.Printf("Запись успешно добавлена!\n")
+		log.Fatal(err)
 	}
-
-	rows, _ := db.Query("SELECT content FROM notes WHERE userID = 1")
 	for rows.Next() {
 		p := Note{}
 		err := rows.Scan(&p.Content)
@@ -137,10 +69,102 @@ func home(w http.ResponseWriter, r *http.Request) {
 			fmt.Println(err)
 			continue
 		}
-		Notes = append(Notes, p)
+		notes = append(notes, p)
+
 	}
 
-	tmpl, _ := template.ParseFiles("./public/html/startStaticPage.html")
-	tmpl.Execute(w, Notes)
+	json.NewEncoder(w).Encode(notes)
+}
+
+func deleteAllNotes(w http.ResponseWriter, r *http.Request) {
+	username, _ := auth.CheckToken(w, r)
+
+	w.Header().Set("Content-Type", "application/json")
+
+	db, _ := ConnectDB()
+	defer db.Close()
+
+	_, err := db.Exec("DELETE FROM notes WHERE username = $1", username)
+	if err != nil {
+		log.Println(err)
+	} else {
+		fmt.Println("Все записи удалены.")
+	}
+	json.NewEncoder(w).Encode(Notes)
+}
+
+func createNote(w http.ResponseWriter, r *http.Request) {
+	username, _ := auth.CheckToken(w, r)
+
+	db, _ := ConnectDB()
+	defer db.Close()
+
+	var note Note
+	_ = json.NewDecoder(r.Body).Decode(&note)
+	Notes = append(Notes, note)
+	json.NewEncoder(w).Encode(note)
+	fmt.Println(note.Content)
+	checkContent, _ := spel.CheckText(note.Content)
+
+	_, err := db.Exec(fmt.Sprintf("INSERT INTO notes (content,username) VALUES ('%s','%s')", checkContent, username))
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Printf("Запись успешно добавлена!\n")
+
+	}
+
+}
+
+// Авторизация пользователя
+
+func handleRequest(w http.ResponseWriter, r *http.Request) {
+
+	type Data struct {
+		Username string `json:"username"`
+	}
+
+	username := r.PostFormValue("username")
+	var data Data
+	err := json.NewDecoder(r.Body).Decode(&data)
+	if err != nil {
+		fmt.Fprintf(w, "Ошибка при декодировании запроса: %v", err)
+		return
+	}
+	fmt.Println(data.Username)
+	if DAL.CheckUser(data.Username) == true {
+		fmt.Println("Пользователь найден")
+		fmt.Println(username)
+		token, err := auth.GenerateToken(data.Username)
+		fmt.Println(token)
+		if err != nil {
+			http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+			return
+		}
+
+		http.SetCookie(w, &http.Cookie{
+			Name:    "token",
+			Value:   token,
+			Expires: time.Now().Add(24 * time.Hour),
+		})
+
+	} else {
+
+		fmt.Println("error")
+	}
+
+}
+
+func main() {
+	db, _ := ConnectDB()
+	defer db.Close()
+
+	r := mux.NewRouter()
+	log.Println("Listening at port 8082")
+	r.HandleFunc("/notes", getNotes).Methods("GET")
+	r.HandleFunc("/notes", deleteAllNotes).Methods("DELETE")
+	r.HandleFunc("/notes", createNote).Methods("POST")
+	r.HandleFunc("/login", handleRequest).Methods("POST")
+	log.Fatal(http.ListenAndServe(":8082", r))
 
 }
