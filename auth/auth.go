@@ -1,7 +1,6 @@
 package jwtutil
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
@@ -16,7 +15,7 @@ type Claims struct {
 }
 
 func GenerateToken(username string) (string, error) {
-	fmt.Println(username)
+
 	expirationTime := time.Now().Add(24 * time.Hour)
 	claims := &Claims{
 		Username: username,
@@ -26,8 +25,6 @@ func GenerateToken(username string) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	fmt.Println(username)
-	fmt.Println("1")
 	return token.SignedString(jwtKey)
 }
 
@@ -58,7 +55,6 @@ func CheckToken(w http.ResponseWriter, r *http.Request) (string, int) {
 	}
 
 	tokenStr := c.Value
-	fmt.Println(tokenStr)
 	claims, err := ValidateToken(tokenStr)
 	if err != nil {
 		http.Error(w, "Invalid token", http.StatusUnauthorized)

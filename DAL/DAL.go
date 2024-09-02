@@ -29,48 +29,15 @@ func ConnectDB() (*sql.DB, error) {
 		panic(err)
 	}
 
-	err = db.Ping()
-	if err != nil {
-		panic(err)
-	}
 	return db, err
 }
 
-func CheckUser(username string) bool {
-
-	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
-	db, err := sql.Open("postgres", psqlconn)
-	if err != nil {
-		log.Fatal(err)
-	}
+func CreateTable() {
+	db, err := ConnectDB()
 	defer db.Close()
-	err = db.Ping()
-
-	notes := []Note{}
-
-	rows, err := db.Query(fmt.Sprintf("SELECT id FROM users WHERE users = '%s'", username))
+	_, err = db.Exec("CREATE TABLE IF NOT EXISTS notes (id SERIAL PRIMARY KEY, content TEXT, username TEXT)")
 	if err != nil {
 		log.Fatal(err)
 	}
-	for rows.Next() {
-		p := Note{}
-		err := rows.Scan(&p.Content)
-		if err != nil {
-			fmt.Println(err)
-			continue
-		}
-		notes = append(notes, p)
 
-	}
-	if len(notes) < 1 {
-		fmt.Println("Не нашлость")
-		fmt.Println(notes)
-		return false
-	}
-	if len(notes) >= 1 {
-		fmt.Println("Нашлось!")
-		return true
-	}
-	fmt.Println(notes)
-	return true
 }

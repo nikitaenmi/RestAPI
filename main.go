@@ -8,6 +8,7 @@ import (
 	"time"
 	DAL "tmp/DAL"
 	auth "tmp/auth"
+	cu "tmp/checkuser"
 	spel "tmp/speller"
 
 	"github.com/gorilla/mux"
@@ -65,7 +66,7 @@ func deleteAllNotes(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Write([]byte(("Все заметки удалены.")))
 	}
-	json.NewEncoder(w).Encode(Notes)
+
 }
 
 func createNote(w http.ResponseWriter, r *http.Request) {
@@ -98,24 +99,23 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	var data Data
 	err := json.NewDecoder(r.Body).Decode(&data)
 	if err != nil {
-		fmt.Fprintf(w, "Ошибка при декодировании запроса: %v", err)
+		log.Println(err)
 		return
 	}
 
-	if DAL.CheckUser(data.Username) == true {
+	if cu.CheckUser("user.txt", data.Username) {
 		token, err := auth.GenerateToken(data.Username)
-		fmt.Println(token)
 		if err != nil {
 			http.Error(w, "Failed to generate token", http.StatusInternalServerError)
 			return
 		}
-		w.Write([]byte(fmt.Sprintf("Авторизация прошла успешно. Здравствуйте, %s!", data.Username)))
 
 		http.SetCookie(w, &http.Cookie{
 			Name:    "token",
 			Value:   token,
 			Expires: time.Now().Add(24 * time.Hour),
 		})
+		w.Write([]byte(fmt.Sprintf("Авторизация прошла успешно. Здравствуйте, %s!", data.Username)))
 
 	} else {
 		log.Println(err)
@@ -124,14 +124,15 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+
 	db, _ := DAL.ConnectDB()
 	defer db.Close()
-
+	DAL.CreateTable()
 	r := mux.NewRouter()
-	log.Println("Listening at port 8082")
+	log.Println("Listening at port 8080")
 	r.HandleFunc("/notes", getNotes).Methods("GET")
 	r.HandleFunc("/notes", deleteAllNotes).Methods("DELETE")
 	r.HandleFunc("/notes", createNote).Methods("POST")
 	r.HandleFunc("/login", handleRequest).Methods("POST")
-	log.Fatal(http.ListenAndServe(":8082", r))
+	log.Fatal(http.ListenAndServe(":8080", r))
 }
